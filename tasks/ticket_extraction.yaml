@@ -1,0 +1,22 @@
+name: support_ticket_extraction
+prompt_template: >
+  Extract structured fields from the following customer support ticket.
+
+  Return a single JSON object with exactly these keys:
+  - category: one of "billing", "technical", "account", "feature_request", "other"
+  - urgency: one of "low", "medium", "high"
+  - products_mentioned: a list of product name strings mentioned in the ticket (empty list if none)
+  - sentiment: one of "positive", "neutral", "negative"
+
+  Return only the JSON object, with no additional text.
+
+  Ticket:
+  {input}
+rubric: >
+  Score 5 if the output is valid JSON with exactly the required keys and all
+  four fields (category, urgency, products_mentioned, sentiment) match the
+  expected extraction. Score 3 if the JSON is well-formed and most fields
+  match but one field is wrong (e.g. urgency off by one level, or a missing
+  product mention). Score 1 if the output is not valid JSON, is missing
+  required keys, or multiple fields are incorrect.
+cases_file: data/cases.jsonl

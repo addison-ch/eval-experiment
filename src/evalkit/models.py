@@ -28,6 +28,13 @@ class Task(BaseModel):
         return v
 
 
+class TaskYamlSpec(BaseModel):
+    name: str
+    prompt_template: str
+    rubric: str
+    cases_file: str
+
+
 class CompletionResult(BaseModel):
     id: str
     case_id: str
