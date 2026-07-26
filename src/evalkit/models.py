@@ -43,7 +43,7 @@ class CompletionResult(BaseModel):
     latency_ms: float
     input_tokens: int
     output_tokens: int
-    cost_estimate: float
+    cost_estimate: float | None
     timestamp: datetime
 
 class JudgementResult(BaseModel):
