@@ -5,7 +5,11 @@ from pathlib import Path
 
 import typer
 
-from evalkit.client import OpenAICompletionProvider, CachingCompletionProvider
+from evalkit.client import (
+    CachingCompletionProvider,
+    CompletionProvider,
+    OpenAICompletionProvider,
+)
 from evalkit.loaders import TaskLoadError, load_task
 from evalkit.runner import run_task
 
@@ -22,6 +26,9 @@ def run(
     output_dir: Path = typer.Option(
         Path("runs"), help="Directory to write run results under."
     ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache", help="Bypass the completion cache and always call the API."
+    ),
 ) -> None:
     try:
         task = load_task(task_path)
@@ -32,7 +39,10 @@ def run(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = output_dir / f"{task.name}-{timestamp}"
 
-    provider = CachingCompletionProvider(OpenAICompletionProvider())
+    # --no-cache bypasses the cache entirely (no reads, no writes)
+    provider: CompletionProvider = OpenAICompletionProvider()
+    if not no_cache:
+        provider = CachingCompletionProvider(provider)
     run = asyncio.run(
         run_task(task, provider, model=model, output_dir=run_dir, concurrency=concurrency)
     )
