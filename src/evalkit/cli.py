@@ -5,7 +5,7 @@ from pathlib import Path
 
 import typer
 
-from evalkit.client import OpenAICompletionProvider
+from evalkit.client import OpenAICompletionProvider, CachingCompletionProvider
 from evalkit.loaders import TaskLoadError, load_task
 from evalkit.runner import run_task
 
@@ -32,7 +32,7 @@ def run(
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = output_dir / f"{task.name}-{timestamp}"
 
-    provider = OpenAICompletionProvider()
+    provider = CachingCompletionProvider(OpenAICompletionProvider())
     run = asyncio.run(
         run_task(task, provider, model=model, output_dir=run_dir, concurrency=concurrency)
     )

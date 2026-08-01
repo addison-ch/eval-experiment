@@ -1,8 +1,9 @@
 import asyncio
 import datetime
-import itertools
-import random
 import hashlib
+import itertools
+import json
+import random
 import time
 from collections.abc import Awaitable, Callable
 from typing import Protocol, TypeVar
@@ -11,6 +12,7 @@ from dotenv import load_dotenv
 from openai import APIConnectionError, AsyncOpenAI, InternalServerError, RateLimitError
 
 from evalkit.models import CompletionResult, ProviderResponse
+from evalkit.store import CompletionCache
 
 load_dotenv()
 
@@ -48,20 +50,20 @@ class CompletionProvider(Protocol):
     async def complete(self, model: str, dev_prompt: str, input_text: str) -> ProviderResponse: ...
 
 class CachingCompletionProvider:
-    def __init__(self, provider: CompletionProvider) -> None:
+    def __init__(self, provider: CompletionProvider, cache: CompletionCache | None = None) -> None:
         self.core_provider = provider
-    
-    async def complete(self, model: str, dev_prompt: str, input_text: str) -> ProviderResponse:
-        # calculate hash
-        # concat = model + dev_prompt + input_text
-        # raw = concat.encode('utf-8')
-        # hash = hashlib.sha256(raw).hexdigest()
+        self.cache = cache if cache is not None else CompletionCache()
 
-        # hash look up
-        # if cached:
-        #else:
-        result = await self.core_provider.complete(model, dev_prompt, input_text)
-        # cache result
+    async def complete(self, model: str, dev_prompt: str, input_text: str) -> ProviderResponse:
+        # json.dumps of a list is unambiguous — unlike bare concatenation, no two
+        # distinct (model, dev_prompt, input_text) triples can collide.
+        raw = json.dumps([model, dev_prompt, input_text]).encode("utf-8")
+        digest = hashlib.sha256(raw).hexdigest()
+
+        result = self.cache.get(digest)
+        if result is None:
+            result = await self.core_provider.complete(model, dev_prompt, input_text)
+            self.cache.set(digest, result)
         return result
 
 class OpenAICompletionProvider:

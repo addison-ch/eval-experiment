@@ -1,15 +1,18 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 import pytest
 from openai import AuthenticationError, RateLimitError
 
 from evalkit.client import (
+    CachingCompletionProvider,
     OpenAICompletionProvider,
     _retry_with_backoff,  # pyright: ignore[reportPrivateUsage]
     send_completion,
 )
 from evalkit.models import ProviderResponse
+from evalkit.store import CompletionCache
 
 
 class RetryableError(Exception):
@@ -282,3 +285,71 @@ async def test_send_completion_propagates_provider_failure() -> None:
         )
 
     assert provider.calls == 1
+
+
+class _CountingProvider:
+    """Records call count and args so cache hit/miss behavior can be asserted."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def complete(self, model: str, dev_prompt: str, input_text: str) -> ProviderResponse:
+        self.calls += 1
+        return ProviderResponse(output=f"out:{input_text}", input_tokens=1, output_tokens=1)
+
+
+@pytest.mark.asyncio
+async def test_caching_provider_miss_then_hit(tmp_path: Path) -> None:
+    core = _CountingProvider()
+    provider = CachingCompletionProvider(core, cache=CompletionCache(tmp_path))
+
+    first = await provider.complete(model="m", dev_prompt="dp", input_text="it")
+    second = await provider.complete(model="m", dev_prompt="dp", input_text="it")
+
+    assert first == second
+    assert core.calls == 1  # second call served from cache, core not hit again
+
+
+@pytest.mark.asyncio
+async def test_caching_provider_distinct_keys_miss_separately(tmp_path: Path) -> None:
+    core = _CountingProvider()
+    provider = CachingCompletionProvider(core, cache=CompletionCache(tmp_path))
+
+    await provider.complete(model="m", dev_prompt="dp", input_text="a")
+    await provider.complete(model="m", dev_prompt="dp", input_text="b")
+
+    assert core.calls == 2  # different input_text -> different key -> both miss
+
+
+@pytest.mark.asyncio
+async def test_caching_provider_model_is_part_of_key(tmp_path: Path) -> None:
+    # Same input, different model must NOT collide (the case.id-key bug we avoid).
+    core = _CountingProvider()
+    provider = CachingCompletionProvider(core, cache=CompletionCache(tmp_path))
+
+    await provider.complete(model="gpt-5", dev_prompt="dp", input_text="it")
+    await provider.complete(model="gpt-4", dev_prompt="dp", input_text="it")
+
+    assert core.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_caching_provider_does_not_cache_failures(tmp_path: Path) -> None:
+    class _FailingCore:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(
+            self, model: str, dev_prompt: str, input_text: str
+        ) -> ProviderResponse:
+            self.calls += 1
+            raise RuntimeError("boom")
+
+    core = _FailingCore()
+    provider = CachingCompletionProvider(core, cache=CompletionCache(tmp_path))
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            await provider.complete(model="m", dev_prompt="dp", input_text="it")
+
+    assert core.calls == 2  # failure not cached; each attempt re-hits the core

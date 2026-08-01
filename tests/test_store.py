@@ -3,8 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from evalkit.models import CompletionResult, RunResult
-from evalkit.store import ResultWriter, read_results, read_run, write_run
+from evalkit.models import CompletionResult, ProviderResponse, RunResult
+from evalkit.store import (
+    CompletionCache,
+    ResultWriter,
+    read_results,
+    read_run,
+    write_run,
+)
 
 
 def _make_result(completion_id: str, case_id: str) -> CompletionResult:
@@ -114,3 +120,41 @@ def test_write_run_excludes_completions(tmp_path: Path) -> None:
 def test_read_run_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         read_run(tmp_path / "nope.json")
+
+
+def test_cache_set_then_get_round_trips(tmp_path: Path) -> None:
+    cache = CompletionCache(tmp_path)
+    value = ProviderResponse(output="hi", input_tokens=1, output_tokens=2)
+
+    cache.set("key-1", value)
+
+    assert cache.get("key-1") == value
+
+
+def test_cache_get_miss_returns_none(tmp_path: Path) -> None:
+    cache = CompletionCache(tmp_path)
+
+    assert cache.get("absent") is None
+
+
+def test_cache_corrupt_entry_is_a_miss(tmp_path: Path) -> None:
+    # A best-effort cache must degrade a corrupt entry to a miss, never crash.
+    cache = CompletionCache(tmp_path)
+    (tmp_path / "corrupt").write_text("{not valid json")
+
+    assert cache.get("corrupt") is None
+
+
+def test_cache_set_writes_atomically_no_temp_left(tmp_path: Path) -> None:
+    cache = CompletionCache(tmp_path)
+    cache.set("key-1", ProviderResponse(output="hi", input_tokens=1, output_tokens=2))
+
+    # Only the final entry should remain — no leftover .tmp file.
+    assert {p.name for p in tmp_path.iterdir()} == {"key-1"}
+
+
+def test_cache_creates_directory(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "nested" / ".cache"
+    CompletionCache(cache_dir)
+
+    assert cache_dir.is_dir()

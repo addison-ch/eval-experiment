@@ -1,7 +1,9 @@
 from pathlib import Path
 from types import TracebackType
 
-from evalkit.models import CompletionResult, RunResult
+from pydantic import ValidationError
+
+from evalkit.models import CompletionResult, ProviderResponse, RunResult
 
 
 class ResultWriter:
@@ -73,3 +75,31 @@ def read_run(path: str | Path) -> RunResult:
     if not run_path.is_file():
         raise FileNotFoundError(f"Run manifest not found: {run_path}")
     return RunResult.model_validate_json(run_path.read_text())
+
+class CompletionCache:
+    """Content-addressed cache of ProviderResponses, one file per key.
+
+    Best-effort by design: a missing OR unreadable entry is a miss, never a
+    fatal error — a corrupt cache file must not be able to crash a run. Writes
+    are atomic (temp file + os.replace) so a crash or concurrent write can't
+    leave a half-written entry behind.
+    """
+
+    def __init__(self, directory: str | Path = ".cache") -> None:
+        self.path = Path(directory)
+        self.path.mkdir(parents=True, exist_ok=True)
+
+    def get(self, key: str) -> ProviderResponse | None:
+        cache_file = self.path / key
+        if not cache_file.is_file():
+            return None
+        try:
+            return ProviderResponse.model_validate_json(cache_file.read_text())
+        except ValidationError:
+            return None  # treat a corrupt/stale entry as a miss
+
+    def set(self, key: str, value: ProviderResponse) -> None:
+        cache_file = self.path / key
+        tmp_file = cache_file.with_suffix(".tmp")
+        tmp_file.write_text(value.model_dump_json())
+        tmp_file.replace(cache_file)  # atomic on POSIX
