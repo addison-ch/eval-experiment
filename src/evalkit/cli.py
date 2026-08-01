@@ -4,8 +4,9 @@ from pathlib import Path
 
 import typer
 
-from evalkit.client import OpenAICompletionProvider, send_completion
+from evalkit.client import OpenAICompletionProvider
 from evalkit.loaders import TaskLoadError, load_task
+from evalkit.runner import run_task
 
 app = typer.Typer()
 
@@ -15,6 +16,8 @@ def run(
     task_path: Path = typer.Argument(
         Path("tasks/ticket_extraction.yaml"), help="Path to a task YAML file."
     ),
+    model: str = typer.Option("gpt-5.4-mini", help="OpenAI model to run completions against."),
+    concurrency: int = typer.Option(5, help="Max concurrent completions in flight."),
 ) -> None:
     try:
         task = load_task(task_path)
@@ -22,21 +25,18 @@ def run(
         typer.echo(f"Error loading task: {e}", err=True)
         raise typer.Exit(code=1) from e
 
-    first_case = task.test_cases[10]
-    dev_prompt = "Follow the instructions in the user message exactly and respond with only the requested output."
-    input_text = task.prompt_template.format(input=first_case.input)
-
     provider = OpenAICompletionProvider()
-    result = asyncio.run(
-        send_completion(
-            provider,
-            model="gpt-5.4-mini",
-            dev_prompt=dev_prompt,
-            input_text=input_text,
-            case_id=first_case.id,
-        )
+    results = asyncio.run(
+        run_task(task, provider, model=model, concurrency=concurrency)
     )
-    print(result)
+
+    total = len(task.test_cases)
+    typer.echo(f"Completed {len(results)}/{total} cases for task '{task.name}'.")
+    for result in results:
+        typer.echo(
+            f"  {result.case_id}: {result.output_tokens} out tokens, "
+            f"{result.latency_ms:.0f}ms"
+        )
 
 
 def main() -> None:
