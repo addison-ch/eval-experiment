@@ -90,6 +90,7 @@ def test_completion_result_parses_valid_data() -> None:
         id="completion-1",
         case_id="case-1",
         model="gpt-5",
+        input="a document to summarize",
         output="a summary",
         latency_ms=123.4,
         input_tokens=10,
@@ -109,6 +110,7 @@ def test_completion_result_parses_iso_timestamp_string() -> None:
             "id": "completion-1",
             "case_id": "case-1",
             "model": "gpt-5",
+            "input": "a document to summarize",
             "output": "a summary",
             "latency_ms": 123.4,
             "input_tokens": 10,
@@ -211,6 +213,7 @@ def test_judgement_result_score_out_of_range_raises() -> None:
 
 def test_run_result_parses_valid_data_with_defaults() -> None:
     run = RunResult(
+        run_id="run-1",
         task="summarization",
         model="gpt-5",
         started_at=datetime(2026, 7, 24, 12, 0, 0),
@@ -226,6 +229,7 @@ def test_run_result_parses_nested_results() -> None:
         id="completion-1",
         case_id="case-1",
         model="gpt-5",
+        input="a document to summarize",
         output="a summary",
         latency_ms=123.4,
         input_tokens=10,
@@ -243,6 +247,7 @@ def test_run_result_parses_nested_results() -> None:
     )
 
     run = RunResult(
+        run_id="run-1",
         task="summarization",
         model="gpt-5",
         started_at=datetime(2026, 7, 24, 12, 0, 0),

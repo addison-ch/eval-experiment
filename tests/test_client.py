@@ -6,10 +6,10 @@ from openai import AuthenticationError, RateLimitError
 
 from evalkit.client import (
     OpenAICompletionProvider,
-    ProviderResponse,
     _retry_with_backoff,  # pyright: ignore[reportPrivateUsage]
     send_completion,
 )
+from evalkit.models import ProviderResponse
 
 
 class RetryableError(Exception):
@@ -248,6 +248,7 @@ async def test_send_completion_builds_completion_result() -> None:
 
     assert result.case_id == "case-1"
     assert result.model == "gpt-5.4-mini"
+    assert result.input == "it"
     assert result.output == "answer"
     assert result.input_tokens == 10
     assert result.output_tokens == 5

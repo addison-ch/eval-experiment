@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import datetime
 
 
@@ -35,10 +35,21 @@ class TaskYamlSpec(BaseModel):
     cases_file: str
 
 
+class ProviderResponse(BaseModel):
+    # Persisted when caching, so it crosses the disk trust boundary on read-back
+    # — hence a validated (frozen) pydantic model rather than a plain dataclass.
+    model_config = ConfigDict(frozen=True)
+
+    output: str
+    input_tokens: int
+    output_tokens: int
+
+
 class CompletionResult(BaseModel):
     id: str
     case_id: str
     model: str
+    input: str  # rendered input text sent to the model (not the dev prompt)
     output: str
     latency_ms: float
     input_tokens: int
@@ -55,6 +66,7 @@ class JudgementResult(BaseModel):
     judge_model: str
 
 class RunResult(BaseModel):
+    run_id: str
     task: str
     model: str
     started_at: datetime

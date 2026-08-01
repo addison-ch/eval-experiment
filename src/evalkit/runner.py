@@ -1,9 +1,11 @@
 import asyncio
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 from evalkit.client import CompletionProvider, send_completion
-from evalkit.models import Case, CompletionResult, Task
-from evalkit.store import ResultWriter
+from evalkit.models import Case, CompletionResult, RunResult, Task
+from evalkit.store import ResultWriter, write_run
 
 # Assembled here because the runner owns turning a Task + Case into a full
 # prompt; providers only see the finished dev/user text.
@@ -11,6 +13,9 @@ DEV_PROMPT = (
     "Follow the instructions in the user message exactly and respond with "
     "only the requested output."
 )
+
+COMPLETIONS_FILENAME = "completions.jsonl"
+RUN_MANIFEST_FILENAME = "run.json"
 
 
 async def _run_case(
@@ -22,6 +27,9 @@ async def _run_case(
     """Render one case's prompt and get its completion. Plain async: knows
     nothing about concurrency limits — that is the runner's concern."""
     input_text = prompt_template.format(input=case.input)
+
+    # Compute cache key...
+    
     return await send_completion(
         provider,
         model=model,
@@ -35,23 +43,39 @@ async def run_task(
     task: Task,
     provider: CompletionProvider,
     model: str,
-    output_path: Path,
+    output_dir: Path,
     *,
     concurrency: int = 5,
-) -> list[CompletionResult]:
+) -> RunResult:
     """Run every case in a task concurrently, bounded by a semaphore.
 
-    Each successful CompletionResult is written to `output_path` (JSONL) the
-    moment its case finishes, so a crash mid-run leaves everything completed so
-    far on disk.
+    Writes two files under `output_dir`:
+      - completions.jsonl: one CompletionResult per successful case, written the
+        moment that case finishes (crash mid-run leaves the successes so far).
+      - run.json: the run manifest (run-level metadata), written at start with
+        completed_at=None and rewritten at the end to stamp completed_at.
 
-    A case that fails (retries exhausted or a non-retryable error) is logged
-    and dropped so one bad case can't kill the whole batch — the returned list
-    holds only the successes, in case order.
+    A case that fails (retries exhausted or a non-retryable error) is logged and
+    dropped so one bad case can't kill the whole batch — the returned RunResult's
+    completions hold only the successes, in case order.
     """
+    completions_path = output_dir / COMPLETIONS_FILENAME
+    manifest_path = output_dir / RUN_MANIFEST_FILENAME
+
+    run = RunResult(
+        run_id=uuid.uuid4().hex,
+        task=task.name,
+        model=model,
+        started_at=datetime.now(),
+    )
+    # Write the manifest up front so the run is self-identifying and durable
+    # immediately — a crash still leaves a record of what produced the
+    # completions, with completed_at=None marking it unfinished.
+    write_run(manifest_path, run)
+
     semaphore = asyncio.Semaphore(concurrency)
 
-    with ResultWriter(output_path) as writer:
+    with ResultWriter(completions_path) as writer:
 
         async def _guarded(case: Case) -> CompletionResult | None:
             async with semaphore:
@@ -70,4 +94,9 @@ async def run_task(
 
         results = await asyncio.gather(*(_guarded(case) for case in task.test_cases))
 
-    return [r for r in results if r is not None]
+    run.completions = [r for r in results if r is not None]
+    run.completed_at = datetime.now()
+    # Finalize: rewrite the manifest with completed_at now set.
+    write_run(manifest_path, run)
+
+    return run

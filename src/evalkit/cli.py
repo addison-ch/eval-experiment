@@ -30,17 +30,17 @@ def run(
         raise typer.Exit(code=1) from e
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_path = output_dir / f"{task.name}-{timestamp}" / "completions.jsonl"
+    run_dir = output_dir / f"{task.name}-{timestamp}"
 
     provider = OpenAICompletionProvider()
-    results = asyncio.run(
-        run_task(task, provider, model=model, output_path=output_path, concurrency=concurrency)
+    run = asyncio.run(
+        run_task(task, provider, model=model, output_dir=run_dir, concurrency=concurrency)
     )
 
     total = len(task.test_cases)
-    typer.echo(f"Completed {len(results)}/{total} cases for task '{task.name}'.")
-    typer.echo(f"Results written to {output_path}")
-    for result in results:
+    typer.echo(f"Run {run.run_id}: completed {len(run.completions)}/{total} cases for '{task.name}'.")
+    typer.echo(f"Results written to {run_dir}")
+    for result in run.completions:
         typer.echo(
             f"  {result.case_id}: {result.output_tokens} out tokens, "
             f"{result.latency_ms:.0f}ms"

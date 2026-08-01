@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import TracebackType
 
-from evalkit.models import CompletionResult
+from evalkit.models import CompletionResult, RunResult
 
 
 class ResultWriter:
@@ -52,3 +52,24 @@ def read_results(path: str | Path) -> list[CompletionResult]:
                 continue
             results.append(CompletionResult.model_validate_json(stripped))
     return results
+
+
+def write_run(path: str | Path, run: RunResult) -> None:
+    """Write the run manifest (run-level metadata) as a single JSON object.
+
+    The per-case results live in the completions JSONL stream, so they are
+    excluded here rather than duplicated into the manifest. Called once at run
+    start (completed_at=None) and again at the end to stamp completed_at.
+    """
+    run_path = Path(path)
+    run_path.parent.mkdir(parents=True, exist_ok=True)
+    run_path.write_text(run.model_dump_json(exclude={"completions", "judgments"}))
+
+
+def read_run(path: str | Path) -> RunResult:
+    """Read a run manifest back into a RunResult (completions/judgments empty —
+    those are read separately from the completions stream)."""
+    run_path = Path(path)
+    if not run_path.is_file():
+        raise FileNotFoundError(f"Run manifest not found: {run_path}")
+    return RunResult.model_validate_json(run_path.read_text())
