@@ -1,5 +1,6 @@
 # CLI entry point
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -18,6 +19,9 @@ def run(
     ),
     model: str = typer.Option("gpt-5.4-mini", help="OpenAI model to run completions against."),
     concurrency: int = typer.Option(5, help="Max concurrent completions in flight."),
+    output_dir: Path = typer.Option(
+        Path("runs"), help="Directory to write run results under."
+    ),
 ) -> None:
     try:
         task = load_task(task_path)
@@ -25,13 +29,17 @@ def run(
         typer.echo(f"Error loading task: {e}", err=True)
         raise typer.Exit(code=1) from e
 
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    output_path = output_dir / f"{task.name}-{timestamp}" / "completions.jsonl"
+
     provider = OpenAICompletionProvider()
     results = asyncio.run(
-        run_task(task, provider, model=model, concurrency=concurrency)
+        run_task(task, provider, model=model, output_path=output_path, concurrency=concurrency)
     )
 
     total = len(task.test_cases)
     typer.echo(f"Completed {len(results)}/{total} cases for task '{task.name}'.")
+    typer.echo(f"Results written to {output_path}")
     for result in results:
         typer.echo(
             f"  {result.case_id}: {result.output_tokens} out tokens, "

@@ -203,6 +203,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# evalkit run outputs (generated completions/judgements per run)
+runs/
+
 # Ruff stuff:
 .ruff_cache/
 
